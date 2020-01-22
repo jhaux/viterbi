@@ -1,9 +1,9 @@
-from typing import Callable
 import numpy as np
+from typing import Callable
 
 
 def poseL2(pose1, pose2):
-    '''Compute the mean keypoint distance of two poses'''
+    """Compute the mean keypoint distance of two poses"""
 
     diff = pose1 - pose2
     kp_mag = (diff ** 2).sum(-1)
@@ -13,7 +13,7 @@ def poseL2(pose1, pose2):
 
 
 class Viterbi(object):
-    '''Implements a pose sequence Viterbi algorithm, which does not need to
+    """Implements a pose sequence Viterbi algorithm, which does not need to
     know the whole transition matric, but computes it on the fly for single
     examples. This is due to the fact, that poses are represented as keypoints
     in contiuos space, thus showing a huge amount of variance, resulting in an
@@ -21,42 +21,43 @@ class Viterbi(object):
 
     The transistion probabilities are always calculated based on the distances
     between two states, i.e. two pose representations.
-    '''
+    """
 
-    def __init__(self,
-                 states: list,
-                 transistion_fn: Callable=poseL2):
-        '''
+    def __init__(self, states: np.ndarray, transistion_fn: Callable = poseL2):
+        """
         Arguments
         ---------
-        states : list
-            A list of all possible hidden states, which can be visited, e.g. a
+        states : np.ndarray
+            An array of all possible hidden states, which can be visited, e.g. a
             set of poses from a certain class like `health/uhealthy`.
         transistion_fn : Callable
             A function, which given two pose representations computes their
             distance.
-        '''
+        """
 
-        self._states = np.array(states)
+        self._states = states
 
         self.distance = transistion_fn
 
-        self._state_transitions = self.distance(self._states[None], self._states[:, None])
+        self._state_transitions = self.distance(
+            self._states[None], self._states[:, None]
+        )
 
-
-    def __call__(self, observations: list, blanket_size: int=5, direct_dist_weight=3.) -> list:
-        '''
+    def __call__(
+        self, observations: list, blanket_size: int = 5, direct_dist_weight=3.0
+    ) -> list:
+        """
         Finds the sequences of hidden states, which are the most likely to fit
         the observations.
 
         Arguments
         ---------
-        observations : list
+        observations : np.ndarray
             A sequence of pose vectors, which we want to match to the possible
             states.
         blanket_size : int
             How many elements of the hidden sequence should be considered when
-            calculating the transitiona probabilities.
+            calculating the transition probabilities.
         direct_dist_weight : float
             Weight factor weighing the blanket distances against the
             observation - state distance.
@@ -67,13 +68,13 @@ class Viterbi(object):
             The sequence of hidden states which minimizes the distance of each
             state to its observation plus the distance to its ``blanket_size``
             neighbors.
-        '''
+        """
 
         # First pass get all possible distance
+        # M is the sequence length, N the number of possible frames to choose from
+        obs = observations[:, None]  # [M, 1, 17, 2]
 
-        obs = np.array(observations)[:, None]  # [M, 1, 17, 2]
-
-        states = self._states[None]   # [1, N, 17, 2]
+        states = self._states[None]  # [1, N, 17, 2]
 
         distances = poseL2(obs, states)  # [M, N]
         print(distances)
@@ -85,7 +86,7 @@ class Viterbi(object):
         hidden_states = []
         for t in range(len(obs)):
             nn_dists = [direct_dist_weight * distances[t]]
-            for i in range(1, min(t, blanket_size)+1):
+            for i in range(1, min(t, blanket_size) + 1):
                 prev_idx = hidden_states[t - i][0]
                 dist_prev_state_current_state = state_distances[prev_idx]
                 nn_dists += [dist_prev_state_current_state]
@@ -101,11 +102,10 @@ class Viterbi(object):
         return hidden_states
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import os
     from sklearn import datasets
     import matplotlib.pyplot as plt
-
 
     n_samples = 500
     noise = 0.05
@@ -123,6 +123,8 @@ if __name__ == '__main__':
     co = obs_[..., 0, 0] * 2 + obs_[..., 0, 1]
     cs = states[..., 0, 0] * 2 + states[..., 0, 1]
 
+    states = np.array(states)
+    obs = np.array(obs)
     V = Viterbi(states)
 
     hidden_states = V(obs, 1)
@@ -130,15 +132,44 @@ if __name__ == '__main__':
 
     outs = np.array([states[i] for i in idxs])
 
-    f, ax = plt.subplots(1, 1, figsize=[0.5*12.8, 0.5*7.2], dpi=300, constrained_layout=True)
+    f, ax = plt.subplots(
+        1, 1, figsize=[0.5 * 12.8, 0.5 * 7.2], dpi=300, constrained_layout=True
+    )
 
-    ax.scatter(obs_[..., 0, 0], obs_[..., 0, 1], alpha=0.1, label='all observations', c=co, ec='k')
-    ax.scatter(obs[..., 0, 0], obs[..., 0, 1], c=np.arange(len(obs)), label='observation', ec='k')
-    ax.scatter(states[..., 0, 0], states[..., 0, 1], alpha=0.1, label='all states', c=cs, ec='k')
-    ax.scatter(outs[..., 0, 0], outs[..., 0, 1], c=np.arange(len(outs)), marker='s', label='matched states', ec='k')
+    ax.scatter(
+        obs_[..., 0, 0],
+        obs_[..., 0, 1],
+        alpha=0.1,
+        label="all observations",
+        c=co,
+        ec="k",
+    )
+    ax.scatter(
+        obs[..., 0, 0],
+        obs[..., 0, 1],
+        c=np.arange(len(obs)),
+        label="observation",
+        ec="k",
+    )
+    ax.scatter(
+        states[..., 0, 0],
+        states[..., 0, 1],
+        alpha=0.1,
+        label="all states",
+        c=cs,
+        ec="k",
+    )
+    ax.scatter(
+        outs[..., 0, 0],
+        outs[..., 0, 1],
+        c=np.arange(len(outs)),
+        marker="s",
+        label="matched states",
+        ec="k",
+    )
 
     ax.legend()
-    ax.set_title('NN sequence found using pose viterbi')
+    ax.set_title("NN sequence found using pose viterbi")
 
-    sp = os.path.join(os.path.dirname(__file__), 'pose_viterbi_on_moon.png')
+    sp = os.path.join(os.path.dirname(__file__), "pose_viterbi_on_moon.png")
     f.savefig(sp)
