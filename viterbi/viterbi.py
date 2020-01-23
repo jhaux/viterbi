@@ -1,25 +1,24 @@
-import numpy as np
 from typing import Callable
+
+import numpy as np
 
 
 def poseL2(pose1, pose2):
     """Compute the mean keypoint distance of two poses"""
-
     diff = pose1 - pose2
     kp_mag = (diff ** 2).sum(-1)
     mean_dist = kp_mag.mean(-1)
-
     return mean_dist
 
 
 class Viterbi(object):
     """Implements a pose sequence Viterbi algorithm, which does not need to
-    know the whole transition matric, but computes it on the fly for single
+    know the whole transition matrix, but computes it on the fly for single
     examples. This is due to the fact, that poses are represented as keypoints
-    in contiuos space, thus showing a huge amount of variance, resulting in an
-    enormus state space, even when only looking at discrete pose samples.
+    in continuous space, thus showing a huge amount of variance, resulting in an
+    enormous state space, even when only looking at discrete pose samples.
 
-    The transistion probabilities are always calculated based on the distances
+    The transition probabilities are always calculated based on the distances
     between two states, i.e. two pose representations.
     """
 
@@ -29,14 +28,13 @@ class Viterbi(object):
         ---------
         states : np.ndarray
             An array of all possible hidden states, which can be visited, e.g. a
-            set of poses from a certain class like `health/uhealthy`.
-        transistion_fn : Callable
+            set of poses from a certain class like `healthy/unhealthy`.
+        transition_fn : Callable
             A function, which given two pose representations computes their
             distance.
         """
 
         self._states = states
-
         self.distance = transistion_fn
 
         self._state_transitions = self.distance(
@@ -45,7 +43,7 @@ class Viterbi(object):
 
     def __call__(
         self, observations: list, blanket_size: int = 5, direct_dist_weight=3.0
-    ) -> list:
+    ) -> np.ndarray:
         """
         Finds the sequences of hidden states, which are the most likely to fit
         the observations.
@@ -71,16 +69,13 @@ class Viterbi(object):
         """
 
         # First pass get all possible distance
-        # M is the sequence length, N the number of possible frames to choose from
+        # M is the sequence length
         obs = observations[:, None]  # [M, 1, 17, 2]
-
+        # N the number of possible frames to choose from
         states = self._states[None]  # [1, N, 17, 2]
 
         distances = poseL2(obs, states)  # [M, N]
-        print(distances)
-
         state_distances = self._state_transitions  # [N, N]
-        print(state_distances)
 
         # Second step: Get combined distance
         hidden_states = []
@@ -92,14 +87,12 @@ class Viterbi(object):
                 nn_dists += [dist_prev_state_current_state]
 
             combined_dists = np.array(nn_dists).sum(0)
-            print(combined_dists.shape)
-
-            new_state_idx = np.argmin(combined_dists)
+            new_state_idx = int(np.argmin(combined_dists))
             new_state = [new_state_idx, combined_dists[new_state_idx]]
 
             hidden_states += [new_state]
 
-        return hidden_states
+        return np.array(hidden_states)
 
 
 if __name__ == "__main__":
