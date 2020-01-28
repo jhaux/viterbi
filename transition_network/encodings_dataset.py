@@ -1,10 +1,3 @@
-"""
-The dataset should return a sequence of latent pose embeddings created using abc_interpolation for one certain label -
-for instance, `healthy`, `Johannes`, etc. Goal is to train a models which outputs a certain shift as a vector. This shift
-is considered the ordinary behaviour for that particular label.
-The residuals of the vectors are then of interest, as these will incorporate behaviour shift which are NOT ordinary.
-"""
-
 import numpy as np
 from abc_interpolation.motion_calibration.utils import extract_data
 from edflow.custom_logging import get_logger
@@ -14,7 +7,7 @@ from edflow.util import linear_var
 logger = get_logger(__name__)
 
 
-def encodings_data():
+def encodings_trainings_data():
     class Dataset(DatasetMixin, PRNGMixin):
         """
         The class is supposed to output the label, an pose encoding, and a certain variance we would expect given
@@ -80,15 +73,48 @@ def encodings_data():
     return Dataset
 
 
-encodings = encodings_data()
+def encodings_evaluation_data():
+    class Dataset(DatasetMixin, PRNGMixin):
+        """
+        """
 
-if __name__ == "__main__":
-    from timeit import timeit
+        def __init__(self, config: dict):
+            self.config = config
+            self.latent_dimension = self.config.get("latent_dimension", 128)
+            self.data_folder = self.config.get("data_folder")
+            self.pattern = self.config.get("pattern", "pose*")
 
-    timeit(
-        pose_encodings=extract_data(
-            "/export/data/rmarwaha/projects/logs/2019-11-20T14-46-23_hg_disc/eval/2020-01-24T14-52-25_pose_enc",
-            pattern="pose*",
-            until="all",
-        )
-    )
+            pose_encodings = extract_data(
+                self.data_folder, pattern=self.pattern.rstrip("*") + "*"
+            )
+            self.pose_encodings = pose_encodings.squeeze(0)[:1000]
+
+            logger.info(f"Shape of the pose encodings: {self.pose_encodings.shape}")
+            self.number_of_encodings = len(self.pose_encodings)
+
+        def get_example(self, idx: int):
+            """
+            """
+            z_anchor = self.pose_encodings[idx]
+            z_concatenated = np.concatenate(
+                (
+                    np.tile(z_anchor, self.number_of_encodings).reshape(
+                        self.number_of_encodings, 1, 1, 128
+                    ),
+                    self.pose_encodings
+                ), axis=-1
+            )
+            output = dict()
+            output["z_concatenated"] = z_concatenated
+
+            return output
+
+        def __len__(self):
+            # Keeping in mind that the hard negative is samples from the next ~20 frames
+            return self.number_of_encodings - 25
+
+    return Dataset
+
+
+training_encodings = encodings_trainings_data()
+evaluation_encodings = encodings_evaluation_data()
