@@ -169,20 +169,20 @@ class TransitionTrainer(PyHookedModelIterator):
     def eval_op(
         self,
         model,
-        z_anchor,
-        z_positive,
-        z_negative,
+        z_concatenated,
         **kwargs,
     ):
         """
         :param model:
-        :param z_anchor:
-        :param z_positive:
-        :param z_negative:
+        :param z_concatenated:
         :param kwargs:
         :return:
         """
-        return {"results": []}
+        full_batch_probabilities = torch.zeros(self.bs, z_concatenated.shape[1], 1)
+        for i, batch in enumerate(z_concatenated):
+            probabilities = model(batch.squeeze(2).squeeze(2))
+            full_batch_probabilities[i] = probabilities.squeeze(-1)
+        return {"labels": {"transition_matrix": full_batch_probabilities}}
 
     def step_ops(self):
         if self.config.get("test_mode", False):
