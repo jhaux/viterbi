@@ -1,8 +1,7 @@
 import numpy as np
-from abc_interpolation.motion_calibration.utils import extract_data
 from edflow.custom_logging import get_logger
 from edflow.data.dataset import DatasetMixin, PRNGMixin
-from edflow.util import linear_var
+from edflow.eval.pipeline import EvalDataFolder
 
 logger = get_logger(__name__)
 
@@ -20,27 +19,20 @@ def encodings_trainings_data():
             self.config = config
             self.latent_dimension = self.config.get("latent_dimension", 128)
             self.data_folder = self.config.get("data_folder")
-            self.pattern = self.config.get("pattern", "pose*")
-            extract_until = "all"
-
             self.step = 0
+            self.neg_dis = 23
 
-            pose_encodings = extract_data(
-                self.data_folder,
-                pattern=self.pattern.rstrip("*") + "*",
-                until=extract_until,
-            )
-            self.pose_encodings = pose_encodings.squeeze(0)
+            pose_dataset = EvalDataFolder(root=self.data_folder + "/0/model_output.csv")
+            self.pose_encodings = pose_dataset.labels["ose"]
 
             logger.info(f"Shape of the pose encodings: {self.pose_encodings.shape}")
             self.number_of_encodings = len(self.pose_encodings)
 
         def get_neg_idx(self, step):
-            start_x, start_y = (0, 23)
-            stop_x, stop_y = (90000, 7)
-            neg_idx_mean = linear_var(step, start_x, stop_x, start_y, stop_y)
+            if self.neg_dis > 7 and step % 2000 == 0:
+                self.neg_dis -= 1
             self.step += 1
-            return int(np.random.normal(neg_idx_mean, 1))
+            return int(self.neg_dis)
 
         def get_example(self, idx: int):
             """
@@ -55,14 +47,16 @@ def encodings_trainings_data():
             Dictionary containing the label, Variance, and beta i.e. the pose encoding.
             """
             z_anchor = self.pose_encodings[idx]
-            next_pos_iter = int(np.random.normal(3, 1))
+            next_pos_iter = int(round(np.random.normal(3, 0.4), 0))
             z_positive = self.pose_encodings[idx + next_pos_iter]
             next_neg_iter = self.get_neg_idx(self.step)
-            z_negative = self.pose_encodings[next_neg_iter]
+            z_negative = self.pose_encodings[idx + next_neg_iter]
             output = dict()
             output["z_anchor"] = z_anchor
             output["z_positive"] = z_positive
             output["z_negative"] = z_negative
+            output["pos_dis"] = next_pos_iter
+            output["neg_dis"] = next_neg_iter
 
             return output
 
@@ -84,10 +78,8 @@ def encodings_evaluation_data():
             self.data_folder = self.config.get("data_folder")
             self.pattern = self.config.get("pattern", "pose*")
 
-            pose_encodings = extract_data(
-                self.data_folder, pattern=self.pattern.rstrip("*") + "*"
-            )
-            self.pose_encodings = pose_encodings.squeeze(0)[:1000]
+            pose_dataset = EvalDataFolder(root=self.data_folder + "/0/model_output.csv")
+            self.pose_encodings = pose_dataset.labels["ose"][:10000]
 
             logger.info(f"Shape of the pose encodings: {self.pose_encodings.shape}")
             self.number_of_encodings = len(self.pose_encodings)
@@ -101,8 +93,9 @@ def encodings_evaluation_data():
                     np.tile(z_anchor, self.number_of_encodings).reshape(
                         self.number_of_encodings, 1, 1, 128
                     ),
-                    self.pose_encodings
-                ), axis=-1
+                    self.pose_encodings,
+                ),
+                axis=-1,
             )
             output = dict()
             output["z_concatenated"] = z_concatenated
