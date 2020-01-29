@@ -20,7 +20,6 @@ def encodings_trainings_data():
             self.latent_dimension = self.config.get("latent_dimension", 128)
             self.data_folder = self.config.get("data_folder")
             self.step = 0
-            self.neg_dis = 23
 
             pose_dataset = EvalDataFolder(root=self.data_folder + "/0/model_output.csv")
             self.pose_encodings = pose_dataset.labels["ose"]
@@ -28,11 +27,12 @@ def encodings_trainings_data():
             logger.info(f"Shape of the pose encodings: {self.pose_encodings.shape}")
             self.number_of_encodings = len(self.pose_encodings)
 
-        def get_neg_idx(self, step):
-            if self.neg_dis > 7 and step % 2000 == 0:
-                self.neg_dis -= 1
-            self.step += 1
-            return int(self.neg_dis)
+        @staticmethod
+        def get_neg_idx(step, tau):
+            next_neg_idx = 4 * tau
+            if step % 5000 == 0 and next_neg_idx > 2 * tau:
+                next_neg_idx -= tau
+            return next_neg_idx
 
         def get_example(self, idx: int):
             """
@@ -46,17 +46,23 @@ def encodings_trainings_data():
             -------
             Dictionary containing the label, Variance, and beta i.e. the pose encoding.
             """
+            tau = 3
             z_anchor = self.pose_encodings[idx]
-            next_pos_iter = int(round(np.random.normal(3, 0.4), 0))
-            z_positive = self.pose_encodings[idx + next_pos_iter]
-            next_neg_iter = self.get_neg_idx(self.step)
-            z_negative = self.pose_encodings[idx + next_neg_iter]
+            next_pos_idx = int(round(np.random.normal(tau, 0.4), 0))
+            z_positive = self.pose_encodings[idx + next_pos_idx]
+
+            next_neg_idx_1 = tau
+            next_neg_idx_2 = self.get_neg_idx(self.step, tau)
+            z_negative_1 = self.pose_encodings[idx + next_neg_idx_1]
+            z_negative_2 = self.pose_encodings[idx + next_neg_idx_2]
             output = dict()
             output["z_anchor"] = z_anchor
             output["z_positive"] = z_positive
-            output["z_negative"] = z_negative
-            output["pos_dis"] = next_pos_iter
-            output["neg_dis"] = next_neg_iter
+            output["z_negative_1"] = z_negative_1
+            output["z_negative_2"] = z_negative_2
+            output["pos_dis"] = next_pos_idx
+            output["neg_dis_1"] = next_neg_idx_1
+            output["neg_dis_2"] = next_neg_idx_2
 
             return output
 
