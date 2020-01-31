@@ -1,0 +1,14 @@
+iterator: viterbi.transition_network.trainer.TransitionTrainer
+dataset: viterbi.transition_network.encodings_dataset.evaluation_encodings
+model: viterbi.transition_network.model.TransNet
+code_root: /export/home/rmarwaha/projects/abc-interpolation
+
+# subset for tests
+#data_folder: "/export/data/rmarwaha/projects/logs/2019-11-20T14-46-23_hg_disc/eval/2020-01-24T14-27-37_pose_enc"
+
+# main pose encodings
+data_folder: "/export/data/rmarwaha/projects/logs/2019-11-20T14-46-23_hg_disc/eval/2020-01-24T14-52-25_pose_enc"
+
+mode: eval
+batch_size: 10
+num_epochs: 1

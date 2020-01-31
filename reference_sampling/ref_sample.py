@@ -59,7 +59,7 @@ class ReferenceSampler(nn.Module):
             pair of following sets of ``ignore_step`` states.
         '''
 
-        trans_p = np.zeros([self.T*self.k, self.T, self.k])
+        trans_p = np.zeros([self.T*self.k, self.T*self.k])
 
         def is_possible(idx1, idx2):
             if idx2 - idx1 < self.k and idx2 - idx1 > 0:
