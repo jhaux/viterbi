@@ -9,5 +9,5 @@ setup(
     description='Custom implementation inspired by the viterbi algorithm to '
                 'find matching pose sequences.',
     packages=find_packages(),    
-    install_requires=['numpy', 'torch', 'scikit-learn', 'edflow'],
+    install_requires=['numpy'],
 )
