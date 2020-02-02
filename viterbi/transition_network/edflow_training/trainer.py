@@ -2,8 +2,8 @@ import torch
 from edflow.iterators.template_iterator import TemplateIterator
 from edflow.util import retrieve
 
+from viterbi.transition_network.utilities.iterator_utils import prepare_logs, prepare_input
 from .triplet_loss import TripletLoss
-from .utils import prepare_logs, prepare_input
 
 
 class TransitionTrainer(TemplateIterator):

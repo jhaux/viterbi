@@ -2,7 +2,7 @@ import numpy as np
 from edflow.custom_logging import get_logger
 from edflow.data.dataset import DatasetMixin, PRNGMixin
 
-from .old_pipeline import EvalDataFolder
+from viterbi.transition_network.utilities.old_pipeline import EvalDataFolder
 
 logger = get_logger(__name__)
 

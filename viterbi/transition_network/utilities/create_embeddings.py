@@ -8,7 +8,7 @@ import torch.nn as nn
 from abc_interpolation.models.basic_model import BasicNet
 from abc_pose.abcnet.heatmaps_pytorch import kp2heat
 
-from viterbi.transition_network.model import TransNet
+from viterbi.transition_network.edflow_training.model import TransNet
 
 
 def compute_transition_probability(
