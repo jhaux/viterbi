@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 
 
-class TransitionNetwork(nn.Module):
+class FCNet(nn.Module):
     def __init__(self, z_dim, hidden_dim):
-        super(TransitionNetwork, self).__init__()
+        super(FCNet, self).__init__()
         self.input_layer = nn.Linear(z_dim, hidden_dim)
         self.activation_layer = nn.ReLU()
         self.hidden_1 = nn.Linear(hidden_dim, hidden_dim)
@@ -38,7 +38,7 @@ class TransNet(torch.nn.Module):
         self.config = config
         self.latent_dimension = config.get("latent_dimension", 128)
 
-        self.trans_net = TransitionNetwork(self.latent_dimension * 2, self.latent_dimension * 4)
+        self.trans_net = FCNet(self.latent_dimension * 2, self.latent_dimension * 4)
 
     def forward(self, zs_concatenated):
         """
