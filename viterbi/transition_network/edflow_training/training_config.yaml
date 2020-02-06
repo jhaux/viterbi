@@ -1,18 +1,30 @@
 iterator: viterbi.transition_network.trainer.TransitionTrainer
-dataset: viterbi.transition_network.encodings_dataset.encodings
+datasets:
+  train: viterbi.transition_network.encodings_dataset.training_encodings
+  validation: viterbi.transition_network.encodings_dataset.validation_encodings
+
 model: viterbi.transition_network.model.TransNet
 code_root: /export/home/rmarwaha/projects/abc-interpolation
-
-# subset for tests
-#data_folder: "/export/data/rmarwaha/projects/logs/2019-11-20T14-46-23_hg_disc/eval/2020-01-24T14-27-37_pose_enc"
 
 # main pose encodings
 data_folder: "/export/data/rmarwaha/projects/logs/2019-11-20T14-46-23_hg_disc/eval/2020-01-24T14-52-25_pose_enc"
 
-batch_size: 64
+batch_size: 100
 num_epochs: 30
+
+loss: triplet
 
 optimizer:
   lr: 1.0e-4
   beta_1: 0.5
   beta_2: 0.99
+
+integrations:
+  tensorboardX:
+    active: false
+    handlers:
+    - scalars
+    - images
+
+  wandb:
+    active: true

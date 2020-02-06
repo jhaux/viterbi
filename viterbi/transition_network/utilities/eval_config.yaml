@@ -10,5 +10,4 @@ code_root: /export/home/rmarwaha/projects/abc-interpolation
 data_folder: "/export/data/rmarwaha/projects/logs/2019-11-20T14-46-23_hg_disc/eval/2020-01-24T14-52-25_pose_enc"
 
 mode: eval
-batch_size: 10
-num_epochs: 1
+batch_size: 50
