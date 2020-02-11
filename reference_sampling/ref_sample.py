@@ -105,6 +105,37 @@ class ReferenceSampler():
 
         return trans_p
 
+    def get_transition_probs(self, previous_states, current_states):
+        trans_p = np.zeros([self.k, self.k])
+
+        for idx in range(self.k):
+            q_state = previous_states[idx]
+
+            p = self.transition_probability([self.targets[q_state]]*self.k,
+                                            self.targets[previous_states])
+            trans_p[idx, :] = p.cpu().detach().numpy()[..., 0]
+
+        return trans_p
+
+    def get_emission_probs_and_states(self, query_at_t):
+        distances, states = self.nn_sampler.search(
+            query_at_t.reshape(-1)[None],  # [1, 17*2]
+            self.k
+        )  # [1, K]
+
+        # Gibbs distribution
+        energy = np.exp(-distances)
+        partition = np.exp(-distances).sum(1)[:, None]
+
+        probabilites = energy / partition
+        # [1, K]
+
+        # probs need to be [K]
+        probs = probabilites[0]
+
+        return probs, states[0]
+
+
     def __call__(self, query):
         '''
         Arguments
@@ -118,31 +149,30 @@ class ReferenceSampler():
             A reference sequence of pose encodings. Shape is the same as
             :attr:`query`.
         '''
-
         self.T = len(query)
-
-        # [T, T*K], [T*K]
-        emit_p, states = self.emission_probabilities_and_states(query)
-        # [T*K, T*K]
-        trans_p = self.get_transition_probability(states)
-
-        self.logger.info(f'e: {emit_p.min()}, {emit_p.max()}')
-        self.logger.info(f't: {trans_p.min()}, {trans_p.max()}')
 
         V = [{}]
 
         # Initialization: The probability for being in one of the possible
         # states is given by the emission probabilities.
-        for st in range(len(trans_p)):
-            V[0][st] = {"prob": emit_p[0][st], "prev": None}
+        emit_p, states = self.get_emission_probs_and_states(query[0])
+        for st in range(len(states)):
+            V[0][st] = {"prob": emit_p[st], "prev": None}
+
+        prev_states = states
         
         # Run Viterbi when t > 0
-        for t in range(1, len(query)):
+        for t in trange(1, len(query), desc='Time'):
             V.append({})
             # At each timestep iterate over all possible states to find its
             # probability for being the current state and also find its
             # most probable predecessor.
-            for st in range(len(trans_p)):
+
+            emit_p, states = self.get_emission_probs_and_states(query[t])
+            trans_p = self.get_transition_probs(prev_states, states)
+            prev_states = states
+
+            for st in range(self.k):
 
                 # Now go through all previous states and find the one which
                 # has the highest transition probability into the current
@@ -151,16 +181,14 @@ class ReferenceSampler():
                 max_tr_prob = V[t-1][st]["prob"] * trans_p[0][st]
                 prev_st_selected = 0
         
-                for prev_st in range(1, len(trans_p)):
-
-                    # TODO: check trans_p
+                for prev_st in range(1, self.k):
                     tr_prob = V[t-1][prev_st]["prob"] * trans_p[prev_st][st]
         
                     if tr_prob > max_tr_prob:
                         max_tr_prob = tr_prob
                         prev_st_selected = prev_st
                         
-                max_prob = max_tr_prob * emit_p[t][st]
+                max_prob = max_tr_prob * emit_p[st]
                 V[t][st] = {'prob': max_prob, 'prev': prev_st_selected}
         
         # Now find the optimal Viterbi path by backtracking
@@ -171,18 +199,15 @@ class ReferenceSampler():
         for st, data in V[-1].items():
             if data["prob"] > max_prob:
                 max_prob = data["prob"]
-                best_st_idx = st
-                best_st = states[best_st_idx]
+                best_st = st
 
         opt.append(best_st)
-        previous = best_st_idx
+        previous = best_st
         
         # Follow the backtrack till the first observation
         for t in range(len(V) - 2, -1, -1):
             previous = V[t + 1][previous]["prev"]
-            prev_state = states[previous]
-
-            opt.insert(0, prev_state)
+            opt.insert(0, previous)
 
         return opt
 
@@ -192,10 +217,13 @@ if __name__ == '__main__':
     from abc_interpolation.datasets.human_gait.human_gait import HG_base
     from edflow.util import edprint
 
-    HG = HG_base()
+    N = 20
+    K = 100
+
+    HG = HumanGaitFixedBox({'data_split': 'train'})
     edprint(HG.labels)
 
-    kps = HG.labels['keypoints'][..., :2].astype('float32')
+    kps = HG.labels['kps_fixed_rel'][..., :2].astype('float32')
     print(kps)
 
     kp_hidden = kps[:int(0.84 * len(HG))]
@@ -203,10 +231,26 @@ if __name__ == '__main__':
     R = ReferenceSampler(kp_hidden, k=10)
 
     start = int(0.84 * len(HG))
-    end = start + 10
-    print(list(range(start, end)))
+    end = start + N
+    q_idxs = list(range(start, end))
+    print(q_idxs)
     q = kps[start: end]
 
     opt = R(q)
 
     print(opt)
+
+    import matplotlib.pyplot as plt
+    from edflow.data.util import adjust_support
+
+    f, AX = plt.subplots(2, len(opt), figsize=[N/10*12.8, 7.2], dpi=100, constrained_layout=True)
+
+    HG.expand = True
+
+    for Ax, indices in zip(AX, [q_idxs, opt]):
+        for ax, idx in zip(Ax, indices):
+            im = adjust_support(HG[idx]['target'], '0->1')
+            ax.imshow(im)
+            ax.axis('off')
+
+    f.savefig('viterbi.pdf')
