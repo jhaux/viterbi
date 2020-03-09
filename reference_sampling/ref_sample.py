@@ -1,6 +1,7 @@
 import torch.nn as nn
 import faiss
 import numpy as np
+import pickle
 
 from tqdm.auto import trange
 
@@ -24,6 +25,7 @@ class ReferenceSampler():
         self.logger = get_logger(self)
 
         self.k = k
+        print('K', self.k)
 
         self.targets = targets
         self.targets_flat = self.targets.reshape(len(targets), -1)
@@ -136,7 +138,7 @@ class ReferenceSampler():
         return probs, states[0]
 
 
-    def __call__(self, query):
+    def __call__(self, query, name='V'):
         '''
         Arguments
         ---------
@@ -149,15 +151,25 @@ class ReferenceSampler():
             A reference sequence of pose encodings. Shape is the same as
             :attr:`query`.
         '''
+
         self.T = len(query)
+
+        V = self.forward(query)
+        store_V(V, name)
+        return find_optimal(V)
+
+    def forward(self, query):
+        '''Does the forward tracking'''
 
         V = [{}]
 
         # Initialization: The probability for being in one of the possible
         # states is given by the emission probabilities.
         emit_p, states = self.get_emission_probs_and_states(query[0])
+        emit_p = np.log(emit_p)
         for st in range(len(states)):
-            V[0][st] = {"prob": emit_p[st], "prev": None}
+            st = str(st)
+            V[0][st] = {"prob": emit_p[int(st)], "prev": None}
 
         prev_states = states
         
@@ -169,88 +181,155 @@ class ReferenceSampler():
             # most probable predecessor.
 
             emit_p, states = self.get_emission_probs_and_states(query[t])
+            emit_p = np.log(emit_p)
             trans_p = self.get_transition_probs(prev_states, states)
+            trans_p = np.log(trans_p)
             prev_states = states
 
+            sum_prob = 0
             for st in range(self.k):
+                st = str(st)
 
                 # Now go through all previous states and find the one which
                 # has the highest transition probability into the current
                 # state combined with the probability of being in the
                 # previous state in the first place.
-                max_tr_prob = V[t-1][st]["prob"] * trans_p[0][st]
-                prev_st_selected = 0
+                max_tr_prob = V[t-1][st]["prob"] + trans_p[0][int(st)]
+                prev_st_selected = str(0)
         
                 for prev_st in range(1, self.k):
-                    tr_prob = V[t-1][prev_st]["prob"] * trans_p[prev_st][st]
+                    prev_st = str(prev_st)
+                    tr_prob = V[t-1][prev_st]["prob"] + trans_p[int(prev_st)][int(st)]
         
                     if tr_prob > max_tr_prob:
                         max_tr_prob = tr_prob
                         prev_st_selected = prev_st
                         
-                max_prob = max_tr_prob * emit_p[st]
-                V[t][st] = {'prob': max_prob, 'prev': prev_st_selected}
-        
-        # Now find the optimal Viterbi path by backtracking
-        opt = []
-        max_prob = 0.0
-        previous = None
-        # Get most probable state and its backtrack
-        for st, data in V[-1].items():
-            if data["prob"] > max_prob:
-                max_prob = data["prob"]
-                best_st = st
+                max_prob = max_tr_prob + emit_p[int(st)]
+                V[t][st] = {'prob': max_prob, 'prev': str(prev_st_selected)}
 
-        opt.append(best_st)
-        previous = best_st
-        
-        # Follow the backtrack till the first observation
-        for t in range(len(V) - 2, -1, -1):
-            previous = V[t + 1][previous]["prev"]
-            opt.insert(0, previous)
+                sum_prob += max_prob
 
-        return opt
+            for st in range(self.k):
+                V[t][str(st)]['prob'] = V[t][str(st)]['prob'] / sum_prob
+        return V
+        
+def find_optimal(V):
+    '''Does the backtracking'''
+    # Now find the optimal Viterbi path by backtracking
+    opt = []
+    max_prob = -float('inf')
+    previous = None
+    # Get most probable state and its backtrack
+    for st, data in V[-1].items():
+        if data["prob"] > max_prob:
+            max_prob = data["prob"]
+            best_st = st
+            print(f'Changing best to {st}')
+
+    opt.append(int(best_st))
+    previous = best_st
+    
+    # Follow the backtrack till the first observation
+    for t in range(len(V) - 2, 0, -1):
+        print(f't, Prev: {t}, {previous}, {type(previous)}')
+        print(V[t+1].keys())
+        previous = str(previous)
+        previous = V[t][previous]["prev"]
+        opt.insert(0, previous if previous is None else int(previous))
+
+    return opt
+
+def store_V(V, store_path):
+    with open(store_path, 'wb') as pf:
+        pickle.dump(V, pf)
 
 
 if __name__ == '__main__':
-    from abc_interpolation.datasets.human_gait.human_gait import HumanGaitFixedBox
-    from abc_interpolation.datasets.human_gait.human_gait import HG_base
     from edflow.util import edprint
+    from edflow.data.believers.meta_view import MetaViewDataset
+    import os
 
-    N = 20
-    K = 100
+    import argparse
+    A = argparse.ArgumentParser()
 
-    HG = HumanGaitFixedBox({'data_split': 'train'})
-    edprint(HG.labels)
+    A.add_argument('-s', action='store_true', help='Sample new reference')
+    A.add_argument('-p', action='store_true', help='Use Prjoti_J dset')
+    A.add_argument('name', type=str, help='Experiment name')
+    A.add_argument('-n', type=int, default=20, help='number timesteps')
+    A.add_argument('-k', type=int, default=100, help='number NNs')
 
-    kps = HG.labels['kps_fixed_rel'][..., :2].astype('float32')
-    print(kps)
+    args = A.parse_args()
 
-    kp_hidden = kps[:int(0.84 * len(HG))]
+    sample = args.s
+    prjoti = args.p
+    name = args.name
 
-    R = ReferenceSampler(kp_hidden, k=10)
+    N = args.n
+    K = args.k
 
-    start = int(0.84 * len(HG))
+    full_name = f'{name}_{N}x{K}'
+
+    if prjoti:
+        D = Prjoti({'data_root': '/home/jhaux/Dr_J/Projects/VUNet4Bosch/Prjoti_J/'})
+        kps = D.labels['kps_rel'][..., :2].astype('float32')
+        kps = kps[:, [8, 9, 10, 11, 12, 13], :]
+        crop_key = 'crop'
+    else:
+        root = "/export/scratch/jhaux/Data/human gait/train_view"
+        if os.environ['HOME'] == '/home/jhaux':
+            root = os.path.join('/home/jhaux/remote/cg2', root[1:])
+        D = MetaViewDataset(root)
+        kps = D.labels['kps_fixed_rel'][..., :2].astype('float32')
+        crop_key = 'target'
+    edprint(D.labels)
+
+    print(kps.shape)
+
+    hidden_start = 0
+    hidden_end = int(0.84 * len(D))
+    kp_hidden = kps[hidden_start:hidden_end]
+
+    start = int(0.84 * len(D))
     end = start + N
     q_idxs = list(range(start, end))
     print(q_idxs)
+
     q = kps[start: end]
 
-    opt = R(q)
+    if sample:
+        R = ReferenceSampler(kp_hidden, k=K)
+        opt = R(q, f'{full_name}.p')
+    else:
+        with open(f'{full_name}.p', 'rb') as pf:
+            V = pickle.load(pf)
+        edprint(V)
+        opt = find_optimal(V)
 
-    print(opt)
+    opt = [hidden_start + i for i in opt]
 
     import matplotlib.pyplot as plt
     from edflow.data.util import adjust_support
 
-    f, AX = plt.subplots(2, len(opt), figsize=[N/10*12.8, 7.2], dpi=100, constrained_layout=True)
+    f, AX = plt.subplots(2, len(opt),
+                         figsize=[N/10*12.8, 7.2],
+                         dpi=100,
+                         constrained_layout=True)
 
-    HG.expand = True
+    D.expand = True
 
-    for Ax, indices in zip(AX, [q_idxs, opt]):
+    for i, [Ax, indices] in enumerate(zip(AX, [q_idxs, opt])):
         for ax, idx in zip(Ax, indices):
-            im = adjust_support(HG[idx]['target'], '0->1')
+            print(D.base)
+            D.base.loader_kwargs['target']['root'] = '/home/jhaux/remote/cg2'
+            edprint(D.base.loader_kwargs)
+            edprint(D.meta)
+            ex = D[idx]
+            edprint(ex)
+            crop = D[idx][crop_key]
+            im = adjust_support(crop, '0->1')
             ax.imshow(im)
             ax.axis('off')
+            ax.set_title(f'{"Q" if i == 0 else "R"}: {idx}')
 
-    f.savefig('viterbi.pdf')
+    f.savefig(f'{full_name}.pdf')

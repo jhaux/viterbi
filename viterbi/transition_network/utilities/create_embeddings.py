@@ -3,6 +3,7 @@ A script for generating transition probabilities between two given keypoints giv
 network which computes the probability of the transition.
 """
 import numpy as np
+import os
 import torch
 import torch.nn as nn
 from abc_interpolation.models.basic_model import BasicNet
@@ -44,7 +45,7 @@ def create_embedding(keypoints: np.ndarray, model: nn.Module) -> torch.Tensor:
     :return: The pose embedding as a torch.Tensor.
     """
     keypoints_tensor = torch.tensor(keypoints)
-    if torch.cuda.is_available:
+    if torch.cuda.is_available():
         keypoints_tensor = keypoints_tensor.cuda()
     heatmap = kp2heat(keypoints_tensor).float()
     if len(heatmap.shape) == 3:
@@ -58,7 +59,8 @@ def load_interpolation_model(model_path: str) -> nn.Module:
     :param model_path: Path to the checkpoint file.
     :return: Model with the trained weights.
     """
-    config = {"heatmap_input_channels": 6, "input_channels": 3, 'add_out_channels': 1}
+    config = {"heatmap_input_channels": 6, "input_channels": 3,
+              'add_out_channels': 1}
     model = BasicNet(config)
     initialize_model(model, model_path)
     return model
@@ -91,9 +93,20 @@ def initialize_model(model: nn.Module, model_path: str) -> nn.Module:
 
 class TransProb:
     def __init__(self):
+        if os.environ['HOME'] == '/home/jhaux':
+            prefix = '/home/jhaux/remote/cg2'
+        else:
+            prefix = ''
+
+        print('prefix', prefix)
+
         interpolation_checkpoint_path = "/export/data/rmarwaha/projects/logs/2019-11-20T14-46-23_hg_disc/train/checkpoints/1498-100005_abc_net.ckpt"
         transition_checkpoint_path = '/export/home/rmarwaha/projects/viterbi/logs/2020-02-03T14-08-26_transistion_network_bce/train/checkpoints/model-71833.ckpt'
-        # transition_checkpoint_path = "/export/home/rmarwaha/projects/logs/2020-01-31T10-45-03_transistion_network_triplet/train/checkpoints/model-71833.ckpt"
+
+        interpolation_checkpoint_path = \
+            os.path.join(prefix, interpolation_checkpoint_path[1:])
+        transition_checkpoint_path = \
+            os.path.join(prefix, transition_checkpoint_path[1:])
 
         self.interpolation_model = load_interpolation_model(interpolation_checkpoint_path)
         self.transition_model = load_transition_model(transition_checkpoint_path)
