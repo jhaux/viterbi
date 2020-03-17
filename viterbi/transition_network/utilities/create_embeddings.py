@@ -96,7 +96,7 @@ class TransProb:
         if os.environ['HOME'] == '/home/jhaux':
             prefix = '/home/jhaux/remote/cg2'
         else:
-            prefix = ''
+            prefix = '/'
 
         print('prefix', prefix)
 
